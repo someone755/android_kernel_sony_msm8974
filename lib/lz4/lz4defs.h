@@ -22,6 +22,7 @@
  * Architecture-specific macros
  */
 #define BYTE	u8
+<<<<<<< HEAD
 typedef struct _U16_S { u16 v; } U16_S;
 typedef struct _U32_S { u32 v; } U32_S;
 typedef struct _U64_S { u64 v; } U64_S;
@@ -30,11 +31,20 @@ typedef struct _U64_S { u64 v; } U64_S;
 	&& defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
 
 #define A16(x) (((U16_S *)(x))->v)
+=======
+#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)		\
+	|| defined(CONFIG_ARM) && __LINUX_ARM_ARCH__ >= 6	\
+	&& defined(ARM_EFFICIENT_UNALIGNED_ACCESS)
+typedef struct _U32_S { u32 v; } U32_S;
+typedef struct _U64_S { u64 v; } U64_S;
+
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 #define A32(x) (((U32_S *)(x))->v)
 #define A64(x) (((U64_S *)(x))->v)
 
 #define PUT4(s, d) (A32(d) = A32(s))
 #define PUT8(s, d) (A64(d) = A64(s))
+<<<<<<< HEAD
 #define LZ4_WRITE_LITTLEENDIAN_16(p, v)        \
 	do {    \
 		A16(p) = v; \
@@ -46,16 +56,23 @@ typedef struct _U64_S { u64 v; } U64_S;
 #define A32(x) get_unaligned((u32 *)&(((U16_S *)(x))->v))
 #define A16(x) get_unaligned((u16 *)&(((U16_S *)(x))->v))
 
+=======
+#else /* CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS */
+
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 #define PUT4(s, d) \
 	put_unaligned(get_unaligned((const u32 *) s), (u32 *) d)
 #define PUT8(s, d) \
 	put_unaligned(get_unaligned((const u64 *) s), (u64 *) d)
+<<<<<<< HEAD
 
 #define LZ4_WRITE_LITTLEENDIAN_16(p, v)        \
 	do {    \
 		put_unaligned(v, (u16 *)(p)); \
 		p += 2; \
 	} while (0)
+=======
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 #endif
 
 #define COPYLENGTH 8
@@ -63,6 +80,7 @@ typedef struct _U64_S { u64 v; } U64_S;
 #define ML_MASK  ((1U << ML_BITS) - 1)
 #define RUN_BITS (8 - ML_BITS)
 #define RUN_MASK ((1U << RUN_BITS) - 1)
+<<<<<<< HEAD
 #define MEMORY_USAGE	14
 #define MINMATCH	4
 #define SKIPSTRENGTH	6
@@ -86,19 +104,29 @@ typedef struct _U64_S { u64 v; } U64_S;
 				((MINMATCH * 8) - HASHLOG64K))
 #define HASH_VALUE(p)		(((A32(p)) * 2654435761U) >> \
 				((MINMATCH * 8) - HASH_LOG))
+=======
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 
 #if LZ4_ARCH64/* 64-bit */
 #define STEPSIZE 8
 
 #define LZ4_COPYSTEP(s, d)	\
+<<<<<<< HEAD
 	do {	\
 		PUT8(s, d);	\
 		d += 8;	\
 		s += 8;	\
+=======
+	do {			\
+		PUT8(s, d);	\
+		d += 8;		\
+		s += 8;		\
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 	} while (0)
 
 #define LZ4_COPYPACKET(s, d)	LZ4_COPYSTEP(s, d)
 
+<<<<<<< HEAD
 #define LZ4_SECURECOPY(s, d, e)	\
 	do {				\
 		if (d < e) {		\
@@ -112,11 +140,20 @@ typedef struct _U64_S { u64 v; } U64_S;
 #else
 #define LZ4_NBCOMMONBYTES(val) (__builtin_ctzll(val) >> 3)
 #endif
+=======
+#define LZ4_SECURECOPY(s, d, e)			\
+	do {					\
+		if (d < e) {			\
+			LZ4_WILDCOPY(s, d, e);	\
+		}				\
+	} while (0)
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 
 #else	/* 32-bit */
 #define STEPSIZE 4
 
 #define LZ4_COPYSTEP(s, d)	\
+<<<<<<< HEAD
 	do {	\
 		PUT4(s, d);	\
 		d += 4;	\
@@ -125,11 +162,22 @@ typedef struct _U64_S { u64 v; } U64_S;
 
 #define LZ4_COPYPACKET(s, d)	\
 	do {			\
+=======
+	do {			\
+		PUT4(s, d);	\
+		d += 4;		\
+		s += 4;		\
+	} while (0)
+
+#define LZ4_COPYPACKET(s, d)		\
+	do {				\
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 		LZ4_COPYSTEP(s, d);	\
 		LZ4_COPYSTEP(s, d);	\
 	} while (0)
 
 #define LZ4_SECURECOPY	LZ4_WILDCOPY
+<<<<<<< HEAD
 #define HTYPE const u8*
 
 #ifdef __BIG_ENDIAN
@@ -138,10 +186,13 @@ typedef struct _U64_S { u64 v; } U64_S;
 #define LZ4_NBCOMMONBYTES(val) (__builtin_ctz(val) >> 3)
 #endif
 
+=======
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
 #endif
 
 #define LZ4_READ_LITTLEENDIAN_16(d, s, p) \
 	(d = s - get_unaligned_le16(p))
+<<<<<<< HEAD
 #define LZ4_WILDCOPY(s, d, e)	\
 	do {				\
 		LZ4_COPYPACKET(s, d);	\
@@ -153,3 +204,10 @@ typedef struct _U64_S { u64 v; } U64_S;
 		LZ4_WILDCOPY(s, d, e);	\
 		d = e;	\
 	} while (0)
+=======
+
+#define LZ4_WILDCOPY(s, d, e)		\
+	do {				\
+		LZ4_COPYPACKET(s, d);	\
+	} while (d < e)
+>>>>>>> ccc6a3e... decompressor: add LZ4 decompressor module
