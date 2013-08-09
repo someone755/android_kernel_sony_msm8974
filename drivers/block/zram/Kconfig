@@ -21,4 +21,4 @@ config ZRAM_DEBUG
 	default n
 	help
 	  This option adds additional debugging code to the compressed
-	  RAM block device driver.
+	  RAM block device driver.cd 
