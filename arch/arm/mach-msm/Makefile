@@ -462,3 +462,4 @@ obj-$(CONFIG_ARCH_RANDOM) += early_random.o
 obj-$(CONFIG_PERFMAP) += perfmap.o
 
 CFLAGS_board-8974-console.o += -Idrivers/staging/android
+obj-$(CONFIG_MSM_CPUFREQ_LIMITER) += cpufreq_limit.o
