@@ -6820,8 +6820,6 @@ static struct regulator *taiko_codec_find_regulator(struct snd_soc_codec *codec,
 #ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
 struct snd_soc_codec *fauxsound_codec_ptr;
 EXPORT_SYMBOL(fauxsound_codec_ptr);
-int wcd9xxx_hw_revision;
-EXPORT_SYMBOL(wcd9xxx_hw_revision);
 #endif
 
 static int taiko_codec_probe(struct snd_soc_codec *codec)
@@ -6836,6 +6834,11 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 	void *ptr = NULL;
 	struct wcd9xxx *core = dev_get_drvdata(codec->dev->parent);
 	struct wcd9xxx_core_resource *core_res;
+
+#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
+	pr_info("taiko codec probe...\n");
+	fauxsound_codec_ptr = codec;
+#endif
 
 #ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
 	pr_info("taiko codec probe...\n");
