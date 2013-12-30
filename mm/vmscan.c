@@ -53,6 +53,28 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
 
+/*
+ * reclaim_mode determines how the inactive list is shrunk
+ * RECLAIM_MODE_SINGLE: Reclaim only order-0 pages
+ * RECLAIM_MODE_ASYNC:  Do not block
+ * RECLAIM_MODE_SYNC:   Allow blocking e.g. call wait_on_page_writeback
+ * RECLAIM_MODE_LUMPYRECLAIM: For high-order allocations, take a reference
+ *			page from the LRU and reclaim all pages within a
+ *			naturally aligned range
+ * RECLAIM_MODE_COMPACTION: For high-order allocations, reclaim a number of
+ *			order-0 pages and then compact the zone
+ */
+typedef unsigned __bitwise__ reclaim_mode_t;
+#define RECLAIM_MODE_SINGLE		((__force reclaim_mode_t)0x01u)
+#define RECLAIM_MODE_ASYNC		((__force reclaim_mode_t)0x02u)
+#define RECLAIM_MODE_SYNC		((__force reclaim_mode_t)0x04u)
+#define RECLAIM_MODE_LUMPYRECLAIM	((__force reclaim_mode_t)0x08u)
+#define RECLAIM_MODE_COMPACTION		((__force reclaim_mode_t)0x10u)
+
+#ifdef CONFIG_ZSWAP
+int max_swappiness = 200;
+#endif
+
 struct scan_control {
 	/* Incremented by the number of inactive pages that were scanned */
 	unsigned long nr_scanned;
@@ -353,6 +375,59 @@ out:
 	return ret;
 }
 
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+static void set_reclaim_mode(int priority, struct scan_control *sc,
+				   bool sync)
+{
+	reclaim_mode_t syncmode = sync ? RECLAIM_MODE_SYNC : RECLAIM_MODE_ASYNC;
+
+	/*
+	 * Initially assume we are entering either lumpy reclaim or
+	 * reclaim/compaction.Depending on the order, we will either set the
+	 * sync mode or just reclaim order-0 pages later.
+	 */
+	if (COMPACTION_BUILD)
+		sc->reclaim_mode = RECLAIM_MODE_COMPACTION;
+	else
+		sc->reclaim_mode = RECLAIM_MODE_LUMPYRECLAIM;
+
+	/*
+	 * Avoid using lumpy reclaim or reclaim/compaction if possible by
+	 * restricting when its set to either costly allocations or when
+	 * under memory pressure
+	 */
+	if (sc->order > PAGE_ALLOC_COSTLY_ORDER)
+		sc->reclaim_mode |= syncmode;
+	else if (sc->order && priority < DEF_PRIORITY - 2)
+		sc->reclaim_mode |= syncmode;
+	else
+		sc->reclaim_mode = RECLAIM_MODE_SINGLE | RECLAIM_MODE_ASYNC;
+}
+#else
+static void set_reclaim_mode(int priority, struct scan_control *sc,
+				   bool sync)
+{
+	/* Sync reclaim used only for compaction */
+	reclaim_mode_t syncmode = sync ? RECLAIM_MODE_SYNC : RECLAIM_MODE_ASYNC;
+
+	/*
+	 * Restrict reclaim/compaction to costly allocations or when
+	 * under memory pressure
+	 */
+	if (COMPACTION_BUILD && sc->order &&
+			(sc->order > PAGE_ALLOC_COSTLY_ORDER ||
+			 priority < DEF_PRIORITY - 2))
+		sc->reclaim_mode = RECLAIM_MODE_COMPACTION | syncmode;
+	else
+		sc->reclaim_mode = RECLAIM_MODE_SINGLE | RECLAIM_MODE_ASYNC;
+}
+#endif
+
+static void reset_reclaim_mode(struct scan_control *sc)
+{
+	sc->reclaim_mode = RECLAIM_MODE_SINGLE | RECLAIM_MODE_ASYNC;
+}
+
 static inline int is_page_cache_freeable(struct page *page)
 {
 	/*
@@ -372,6 +447,12 @@ static int may_write_to_queue(struct backing_dev_info *bdi,
 		return 1;
 	if (bdi == current->backing_dev_info)
 		return 1;
+
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+	/* lumpy reclaim for hugepage often need a lot of write */
+	if (sc->order > PAGE_ALLOC_COSTLY_ORDER)
+		return 1;
+#endif
 	return 0;
 }
 
@@ -663,6 +744,12 @@ static enum page_references page_check_references(struct page *page,
 					  &vm_flags);
 	referenced_page = TestClearPageReferenced(page);
 
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+	/* Lumpy reclaim - ignore references */
+	if (sc->reclaim_mode & RECLAIM_MODE_LUMPYRECLAIM)
+		return PAGEREF_RECLAIM;
+#endif
+
 	/*
 	 * Mlock lost the isolation race with us.  Let try_to_unmap()
 	 * move the page to the unevictable list.
@@ -765,6 +852,23 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			nr_writeback++;
 			unlock_page(page);
 			goto keep;
+			/*
+			 * Synchronous reclaim cannot queue pages for
+			 * writeback due to the possibility of stack overflow
+			 * but if it encounters a page under writeback, wait
+			 * for the IO to complete.
+			 */
+			if ((sc->reclaim_mode & RECLAIM_MODE_SYNC) &&
+			    may_enter_fs)
+				wait_on_page_writeback(page);
+			else {
+				unlock_page(page);
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+				goto keep_lumpy;
+#else
+				goto keep_reclaim_mode;
+#endif
+			}
 		}
 
 		if (!force_reclaim)
@@ -851,6 +955,11 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			case PAGE_SUCCESS:
 				if (PageWriteback(page))
 					goto keep;
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+					goto keep_lumpy;
+#else
+					goto keep_reclaim_mode;
+#endif
 				if (PageDirty(page))
 					goto keep;
 
@@ -948,6 +1057,12 @@ activate_locked:
 keep_locked:
 		unlock_page(page);
 keep:
+		reset_reclaim_mode(sc);
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+keep_lumpy:
+#else
+keep_reclaim_mode:
+#endif
 		list_add(&page->lru, &ret_pages);
 		VM_BUG_ON(PageLRU(page) || PageUnevictable(page));
 	}
@@ -1017,6 +1132,22 @@ int __isolate_lru_page(struct page *page, isolate_mode_t mode)
 
 	/* Compaction should not handle unevictable pages but CMA can do so */
 	if (PageUnevictable(page) && !(mode & ISOLATE_UNEVICTABLE))
+	all_lru_mode = (mode & (ISOLATE_ACTIVE|ISOLATE_INACTIVE)) ==
+		(ISOLATE_ACTIVE|ISOLATE_INACTIVE);
+
+	/*
+	 * When checking the active state, we need to be sure we are
+	 * dealing with comparible boolean values.  Take the logical not
+	 * of each.
+	 */
+	if (!all_lru_mode && !PageActive(page) != !(mode & ISOLATE_ACTIVE))
+		return ret;
+
+	if (!all_lru_mode && !!page_is_file_cache(page) != file)
+		return ret;
+
+	/* Do not give back unevictable pages for compaction */
+	if (PageUnevictable(page))
 		return ret;
 
 	ret = -EBUSY;
@@ -1098,6 +1229,11 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 {
 	struct list_head *src;
 	unsigned long nr_taken = 0;
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+	unsigned long nr_lumpy_taken = 0;
+	unsigned long nr_lumpy_dirty = 0;
+	unsigned long nr_lumpy_failed = 0;
+#endif
 	unsigned long scan;
 	int file = is_file_lru(lru);
 
@@ -1105,6 +1241,12 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 	for (scan = 0; scan < nr_to_scan && !list_empty(src); scan++) {
 		struct page *page;
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+		unsigned long pfn;
+		unsigned long end_pfn;
+		unsigned long page_pfn;
+		int zone_id;
+#endif
 
 		page = lru_to_page(src);
 		prefetchw_prev_lru_page(page, src, flags);
@@ -1126,6 +1268,86 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 		default:
 			BUG();
 		}
+
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+		if (!sc->order || !(sc->reclaim_mode & RECLAIM_MODE_LUMPYRECLAIM))
+			continue;
+
+		/*
+		 * Attempt to take all pages in the order aligned region
+		 * surrounding the tag page.  Only take those pages of
+		 * the same active state as that tag page.  We may safely
+		 * round the target page pfn down to the requested order
+		 * as the mem_map is guaranteed valid out to MAX_ORDER,
+		 * where that page is in a different zone we will detect
+		 * it from its zone id and abort this block scan.
+		 */
+		zone_id = page_zone_id(page);
+		page_pfn = page_to_pfn(page);
+		pfn = page_pfn & ~((1 << sc->order) - 1);
+		end_pfn = pfn + (1 << sc->order);
+		for (; pfn < end_pfn; pfn++) {
+			struct page *cursor_page;
+
+			/* The target page is in the block, ignore it. */
+			if (unlikely(pfn == page_pfn))
+				continue;
+
+			/* Avoid holes within the zone. */
+			if (unlikely(!pfn_valid_within(pfn)))
+				break;
+
+			cursor_page = pfn_to_page(pfn);
+
+			/* Check that we have not crossed a zone boundary. */
+			if (unlikely(page_zone_id(cursor_page) != zone_id))
+				break;
+
+			/*
+			 * If we don't have enough swap space, reclaiming of
+			 * anon page which don't already have a swap slot is
+			 * pointless.
+			 */
+			if (nr_swap_pages <= 0 && PageSwapBacked(cursor_page) &&
+			    !PageSwapCache(cursor_page))
+				break;
+
+			if (__isolate_lru_page(cursor_page, mode, file) == 0) {
+				unsigned int isolated_pages;
+
+				mem_cgroup_lru_del(cursor_page);
+				list_move(&cursor_page->lru, dst);
+				isolated_pages = hpage_nr_pages(cursor_page);
+				nr_taken += isolated_pages;
+				nr_lumpy_taken += isolated_pages;
+				if (PageDirty(cursor_page))
+					nr_lumpy_dirty += isolated_pages;
+				scan++;
+				pfn += isolated_pages - 1;
+			} else {
+				/*
+				 * Check if the page is freed already.
+				 *
+				 * We can't use page_count() as that
+				 * requires compound_head and we don't
+				 * have a pin on the page here. If a
+				 * page is tail, we may or may not
+				 * have isolated the head, so assume
+				 * it's not free, it'd be tricky to
+				 * track the head status without a
+				 * page pin.
+				 */
+				if (!PageTail(cursor_page) &&
+				    !atomic_read(&cursor_page->_count))
+					continue;
+				break;
+			}
+		}
+
+		/* If we break out of the loop above, lumpy reclaim failed */
+		if (pfn < end_pfn)
+			nr_lumpy_failed++;
+#endif
 	}
 
 	*nr_scanned = scan;
@@ -1133,6 +1355,9 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 	trace_mm_vmscan_lru_isolate(sc->order,
 			nr_to_scan, scan,
 			nr_taken,
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+			nr_lumpy_taken, nr_lumpy_dirty, nr_lumpy_failed,
+#endif
 			mode, file);
 	return nr_taken;
 }
@@ -1261,6 +1486,93 @@ putback_inactive_pages(struct mem_cgroup_zone *mz,
 	list_splice(&pages_to_free, page_list);
 }
 
+static noinline_for_stack void
+update_isolated_counts(struct mem_cgroup_zone *mz,
+		       struct list_head *page_list,
+		       unsigned long *nr_anon,
+		       unsigned long *nr_file)
+{
+	struct zone *zone = mz->zone;
+	unsigned int count[NR_LRU_LISTS] = { 0, };
+	unsigned long nr_active = 0;
+	struct page *page;
+	int lru;
+
+	/*
+	 * Count pages and clear active flags
+	 */
+	list_for_each_entry(page, page_list, lru) {
+		int numpages = hpage_nr_pages(page);
+		lru = page_lru_base_type(page);
+		if (PageActive(page)) {
+			lru += LRU_ACTIVE;
+			ClearPageActive(page);
+			nr_active += numpages;
+		}
+		count[lru] += numpages;
+	}
+
+	preempt_disable();
+	__count_vm_events(PGDEACTIVATE, nr_active);
+
+	__mod_zone_page_state(zone, NR_ACTIVE_FILE,
+			      -count[LRU_ACTIVE_FILE]);
+	__mod_zone_page_state(zone, NR_INACTIVE_FILE,
+			      -count[LRU_INACTIVE_FILE]);
+	__mod_zone_page_state(zone, NR_ACTIVE_ANON,
+			      -count[LRU_ACTIVE_ANON]);
+	__mod_zone_page_state(zone, NR_INACTIVE_ANON,
+			      -count[LRU_INACTIVE_ANON]);
+
+	*nr_anon = count[LRU_ACTIVE_ANON] + count[LRU_INACTIVE_ANON];
+	*nr_file = count[LRU_ACTIVE_FILE] + count[LRU_INACTIVE_FILE];
+
+	__mod_zone_page_state(zone, NR_ISOLATED_ANON, *nr_anon);
+	__mod_zone_page_state(zone, NR_ISOLATED_FILE, *nr_file);
+	preempt_enable();
+}
+
+/*
+ * Returns true if a direct reclaim should wait on pages under writeback.
+ *
+ * If we are direct reclaiming for contiguous pages and we do not reclaim
+ * everything in the list, try again and wait for writeback IO to complete.
+ * This will stall high-order allocations noticeably. Only do that when really
+ * need to free the pages under high memory pressure.
+ */
+static inline bool should_reclaim_stall(unsigned long nr_taken,
+					unsigned long nr_freed,
+					int priority,
+					struct scan_control *sc)
+{
+	int lumpy_stall_priority;
+
+	/* kswapd should not stall on sync IO */
+	if (current_is_kswapd())
+		return false;
+
+	/* Only stall for memory compaction */
+	if (sc->reclaim_mode & RECLAIM_MODE_SINGLE)
+		return false;
+
+	/* If we have reclaimed everything on the isolated list, no stall */
+	if (nr_freed == nr_taken)
+		return false;
+
+	/*
+	 * For high-order allocations, there are two stall thresholds.
+	 * High-cost allocations stall immediately where as lower
+	 * order allocations such as stacks require the scanning
+	 * priority to be much higher before stalling.
+	 */
+	if (sc->order > PAGE_ALLOC_COSTLY_ORDER)
+		lumpy_stall_priority = DEF_PRIORITY;
+	else
+		lumpy_stall_priority = DEF_PRIORITY / 3;
+
+	return priority <= lumpy_stall_priority;
+}
+
 /*
  * shrink_inactive_list() is a helper for shrink_zone().  It returns the number
  * of reclaimed pages
@@ -1288,6 +1600,12 @@ shrink_inactive_list(unsigned long nr_to_scan, struct mem_cgroup_zone *mz,
 		if (fatal_signal_pending(current))
 			return SWAP_CLUSTER_MAX;
 	}
+
+	set_reclaim_mode(priority, sc, false);
+#ifndef CONFIG_DISABLE_LUMPY_RECLAIM
+	if (sc->reclaim_mode & RECLAIM_MODE_LUMPYRECLAIM)
+		isolate_mode |= ISOLATE_ACTIVE;
+#endif
 
 	lru_add_drain();
 
@@ -1702,11 +2020,16 @@ static void get_scan_count(struct mem_cgroup_zone *mz, struct scan_control *sc,
 	}
 
 	/*
-	 * With swappiness at 100, anonymous and file have the same priority.
 	 * This scanning priority is essentially the inverse of IO cost.
 	 */
 	anon_prio = vmscan_swappiness(sc);
 	file_prio = 200 - vmscan_swappiness(sc);
+	anon_prio = vmscan_swappiness(mz, sc);
+#ifdef CONFIG_ZSWAP
+	file_prio = max_swappiness - vmscan_swappiness(mz, sc);
+#else
+	file_prio = 200 - vmscan_swappiness(mz, sc);
+#endif
 
 	/*
 	 * OK, so we have swap space and a fair amount of page cache
@@ -2196,7 +2519,11 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_writepage = !laptop_mode,
 		.nr_to_reclaim = SWAP_CLUSTER_MAX,
 		.may_unmap = 1,
+#ifdef CONFIG_DIRECT_RECLAIM_FILE_PAGES_ONLY
+		.may_swap = 0,
+#else
 		.may_swap = 1,
+#endif
 		.order = order,
 		.priority = DEF_PRIORITY,
 		.target_mem_cgroup = NULL,
@@ -2365,8 +2692,12 @@ static bool pgdat_balanced(pg_data_t *pgdat, unsigned long balanced_pages,
 	for (i = 0; i <= classzone_idx; i++)
 		present_pages += pgdat->node_zones[i].present_pages;
 
+#ifdef CONFIG_TIGHT_PGDAT_BALANCE
+	return balanced_pages >= (present_pages >> 1);
+#else
 	/* A special case here: if zone has no page, we think it's balanced */
 	return balanced_pages >= (present_pages >> 2);
+#endif
 }
 
 /* is kswapd sleeping prematurely? */
@@ -2440,7 +2771,7 @@ static bool sleeping_prematurely(pg_data_t *pgdat, int order, long remaining,
 static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 							int *classzone_idx)
 {
-	int all_zones_ok;
+	struct zone *unbalanced_zone;
 	unsigned long balanced;
 	int i;
 	int end_zone = 0;	/* Inclusive.  0 = ZONE_DMA */
@@ -2475,6 +2806,11 @@ loop_again:
 		int has_under_min_watermark_zone = 0;
 
 		all_zones_ok = 1;
+		/* The swap token gets in the way of swapout... */
+		if (!priority)
+			disable_swap_token(NULL);
+
+		unbalanced_zone = NULL;
 		balanced = 0;
 
 		/*
@@ -2578,11 +2914,12 @@ loop_again:
 			 * Do not reclaim more than needed for compaction.
 			 */
 			testorder = order;
+#ifndef CONFIG_TIGHT_PGDAT_BALANCE
 			if (COMPACTION_BUILD && order &&
 					compaction_suitable(zone, order) !=
 						COMPACT_SKIPPED)
 				testorder = 0;
-
+#endif
 			if ((buffer_heads_over_limit && is_highmem_idx(i)) ||
 			    !zone_balanced(zone, testorder,
 					   balance_gap, end_zone)) {
@@ -2612,6 +2949,9 @@ loop_again:
 
 			if (!zone_balanced(zone, testorder, 0, end_zone)) {
 				all_zones_ok = 0;
+			if (!zone_watermark_ok_safe(zone, testorder,
+					high_wmark_pages(zone), end_zone, 0)) {
+				unbalanced_zone = zone;
 				/*
 				 * We are still under min water mark.  This
 				 * means that we have a GFP_ATOMIC allocation
@@ -2634,7 +2974,7 @@ loop_again:
 			}
 
 		}
-		if (all_zones_ok || (order && pgdat_balanced(pgdat, balanced, *classzone_idx)))
+		if (!unbalanced_zone || (order && pgdat_balanced(pgdat, balanced, *classzone_idx)))
 			break;		/* kswapd: all done */
 		/*
 		 * OK, kswapd is getting into trouble.  Take a nap, then take
@@ -2644,7 +2984,7 @@ loop_again:
 			if (has_under_min_watermark_zone)
 				count_vm_event(KSWAPD_SKIP_CONGESTION_WAIT);
 			else
-				congestion_wait(BLK_RW_ASYNC, HZ/10);
+				wait_iff_congested(unbalanced_zone, BLK_RW_ASYNC, HZ/10);
 		}
 
 		/*
@@ -2663,7 +3003,7 @@ out:
 	 * high-order: Balanced zones must make up at least 25% of the node
 	 *             for the node to be balanced
 	 */
-	if (!(all_zones_ok || (order && pgdat_balanced(pgdat, balanced, *classzone_idx)))) {
+	if (unbalanced_zone && (!order || !pgdat_balanced(pgdat, balanced, *classzone_idx))) {
 		cond_resched();
 
 		try_to_freeze();
