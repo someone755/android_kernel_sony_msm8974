@@ -2087,6 +2087,13 @@ config MSM_SLEEPER
 	help
 	  Limit max frequency while screen is off
 
+config OC_ULTIMATE
+        bool "Enable Ultimate Overclocking option"
+	depends on CPU_OVERCLOCK
+        default n
+        help
+          Krait overclocking up to 2.8 GHz
+
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
 	default n
