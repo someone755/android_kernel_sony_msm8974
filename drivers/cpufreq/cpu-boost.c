@@ -166,9 +166,6 @@ static int boost_mig_sync_thread(void *data)
 			continue;
 		}
 
-		if (sync_threshold && (dest_policy.cur >= sync_threshold))
-			continue;
-
 		cancel_delayed_work_sync(&s->boost_rem);
 		if (sync_threshold)
 			s->boost_min = min(sync_threshold, src_policy.cur);
