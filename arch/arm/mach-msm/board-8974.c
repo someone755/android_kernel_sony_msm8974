@@ -48,10 +48,16 @@
 #include "pm.h"
 #include "modem_notifier.h"
 #include "platsmp.h"
-
-#include <asm/setup.h>
-#include <linux/persistent_ram.h>
+#ifdef CONFIG_RAMDUMP_TAGS
+#include "board-rdtags.h"
+#endif
 #include "board-8974-console.h"
+#ifdef CONFIG_LCD_KCAL
+#include <mach/kcal.h>
+#include <linux/module.h>
+#include "../../../../drivers/video/msm/mdss/mdss_fb.h"
+extern int update_preset_lcdc_lut(void);
+#endif
 
 static struct memtype_reserve msm8974_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
@@ -73,6 +79,31 @@ static struct reserve_info msm8974_reserve_info __initdata = {
 	.memtype_reserve_table = msm8974_reserve_table,
 	.paddr_to_memtype = msm8974_paddr_to_memtype,
 };
+
+#include <asm/setup.h>
+#include <linux/persistent_ram.h>
+#include "board-8974-console.h"
+
+/* static struct memtype_reserve msm8974_reserve_table[] __initdata = {
+	[MEMTYPE_SMI] = {
+	},
+	[MEMTYPE_EBI0] = {
+		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
+	},
+	[MEMTYPE_EBI1] = {
+		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
+	},
+};
+
+static int msm8974_paddr_to_memtype(phys_addr_t paddr)
+{
+	return MEMTYPE_EBI1;
+}
+
+static struct reserve_info msm8974_reserve_info __initdata = {
+	.memtype_reserve_table = msm8974_reserve_table,
+	.paddr_to_memtype = msm8974_paddr_to_memtype,
+}; */
 
 #ifdef CONFIG_ANDROID_PERSISTENT_RAM
 #define MSM_PERSISTENT_RAM_SIZE (SZ_1M)
@@ -121,6 +152,52 @@ void __init msm_8974_reserve(void)
 	msm_reserve();
 }
 
+#ifdef CONFIG_LCD_KCAL
+extern int g_kcal_r;
+extern int g_kcal_g;
+extern int g_kcal_b;
+
+int kcal_set_values(int kcal_r, int kcal_g, int kcal_b)
+{
+	g_kcal_r = kcal_r;
+	g_kcal_g = kcal_g;
+	g_kcal_b = kcal_b;
+	return 0;
+}
+
+static int kcal_get_values(int *kcal_r, int *kcal_g, int *kcal_b)
+{
+	*kcal_r = g_kcal_r;
+	*kcal_g = g_kcal_g;
+	*kcal_b = g_kcal_b;
+	return 0;
+}
+
+static int kcal_refresh_values(void)
+{
+	return update_preset_lcdc_lut();
+}
+
+static struct kcal_platform_data kcal_pdata = {
+	.set_values = kcal_set_values,
+	.get_values = kcal_get_values,
+	.refresh_display = kcal_refresh_values
+};
+
+static struct platform_device kcal_platrom_device = {
+	.name = "kcal_ctrl",
+	.dev = {
+		.platform_data = &kcal_pdata,
+	}
+};
+
+void __init add_lcd_kcal_devices(void)
+{
+	pr_info (" LCD_KCAL_DEBUG : %s \n", __func__);
+	platform_device_register(&kcal_platrom_device);
+};
+#endif
+
 static void __init msm8974_early_memory(void)
 {
 	reserve_info = &msm8974_reserve_info;
@@ -156,6 +233,9 @@ void __init msm8974_add_drivers(void)
 		msm_clock_init(&msm8974_clock_init_data);
 	tsens_tm_init_driver();
 	msm_thermal_device_init();
+#ifdef CONFIG_LCD_KCAL
+	add_lcd_kcal_devices();
+#endif
 }
 
 static struct of_dev_auxdata msm_hsic_host_adata[] = {
