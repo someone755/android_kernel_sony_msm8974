@@ -134,9 +134,55 @@ static unsigned int *nr_run_profiles[] = {
 	nr_run_thresholds_disable,
 };
 
+<<<<<<< HEAD:arch/arm/hotplug/intelli_plug.c
 #define NR_RUN_ECO_MODE_PROFILE	3
 #define NR_RUN_HYSTERESIS_QUAD	8
 #define NR_RUN_HYSTERESIS_DUAL	4
+=======
+extern unsigned long avg_nr_running(void);
+
+static int mp_decision(void)
+{
+	static bool first_call = true;
+	int new_state = 0;
+	int nr_cpu_online;
+	int index;
+	unsigned int rq_depth;
+	static cputime64_t total_time = 0;
+	static cputime64_t last_time;
+	cputime64_t current_time;
+	cputime64_t this_time = 0;
+
+	current_time = ktime_to_ms(ktime_get());
+	if (first_call) {
+		first_call = false;
+	} else {
+		this_time = current_time - last_time;
+	}
+	total_time += this_time;
+
+	rq_depth = rq_info.rq_avg;
+	//pr_info(" rq_deptch = %u", rq_depth);
+	nr_cpu_online = num_online_cpus();
+
+	if (nr_cpu_online) {
+		index = (nr_cpu_online - 1) * 2;
+		if ((nr_cpu_online < 4) &&
+			(rq_depth >= NwNs_Threshold[index])) {
+			if (total_time >= TwTs_Threshold[index]) {
+				new_state = 1;
+			}
+		} else if (rq_depth <= NwNs_Threshold[index+1]) {
+			if (total_time >= TwTs_Threshold[index+1] ) {
+				new_state = 0;
+			}
+		} else {
+			total_time = 0;
+		}
+	} else {
+		total_time = 0;
+	}
+>>>>>>> 3fc4e80... intelli_plug: refactor stats calculation code to be less intrusive:arch/arm/mach-msm/intelli_plug.c
 
 #define CPU_NR_THRESHOLD	(17 * THREAD_CAPACITY / 100)
 
