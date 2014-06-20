@@ -2058,12 +2058,6 @@ config CPU_VOLTAGE_TABLE
 	help
 	DTS based kernel User Votlage Control
 
-config INTELLI_PLUG
-	bool "Enable intelli-plug cpu hotplug driver"
-	default n
-	help
-	  Generic Intelli-plug cpu hotplug driver for ARM SOCs
-
 config FORCE_FAST_CHARGE
 	bool "Force fast charging (AC/USB) by Yank555.lu"
 	default n
