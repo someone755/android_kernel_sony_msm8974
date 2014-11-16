@@ -103,6 +103,8 @@ config THERMAL_MONITOR
 	  and limits the max frequency of the cores.
 endchoice
 
+endchoice
+
 config SPEAR_THERMAL
 	bool "SPEAr thermal sensor driver"
 	depends on THERMAL
