@@ -36,7 +36,7 @@ static void kcal_apply_values(struct kcal_lut_data *lut_data)
 	lut_data->blue = (lut_data->blue < lut_data->minimum) ?
 		lut_data->minimum : lut_data->blue;
 
-	mdss_mdp_pp_kcal_update(lut_data->red, lut_data->green, lut_data->blue);
+	update_preset_lcdc_lut(lut_data->red, lut_data->green, lut_data->blue);
 }
 
 static ssize_t kcal_store(struct device *dev, struct device_attribute *attr,
@@ -309,9 +309,10 @@ static int __devinit kcal_ctrl_probe(struct platform_device *pdev)
 
 	mdss_mdp_pp_kcal_enable(true);
 
-	mdss_mdp_pp_kcal_update(NUM_QLUT, NUM_QLUT, NUM_QLUT);
-
-	lut_data->red = lut_data->green = lut_data->blue = NUM_QLUT;
+	lut_data->red = mdss_mdp_pp_get_kcal(KCAL_DATA_R);
+	lut_data->green = mdss_mdp_pp_get_kcal(KCAL_DATA_G);
+	lut_data->blue = mdss_mdp_pp_get_kcal(KCAL_DATA_B);
+ 	
 	lut_data->minimum = 35;
 	lut_data->enable = 1;
 	lut_data->invert = 0;
