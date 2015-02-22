@@ -38,11 +38,11 @@
 
 #define DEF_SAMPLING_MS			(268)
 
-#define DUAL_PERSISTENCE		(2500 / DEF_SAMPLING_MS)
-#define TRI_PERSISTENCE			(1700 / DEF_SAMPLING_MS)
-#define QUAD_PERSISTENCE		(1000 / DEF_SAMPLING_MS)
+#define DUAL_PERSISTENCE		(2800 / DEF_SAMPLING_MS)
+#define TRI_PERSISTENCE			(1800 / DEF_SAMPLING_MS)
+#define QUAD_PERSISTENCE		(1200 / DEF_SAMPLING_MS)
 
-#define BUSY_PERSISTENCE		(3500 / DEF_SAMPLING_MS)
+#define BUSY_PERSISTENCE		(3700 / DEF_SAMPLING_MS)
 
 static DEFINE_MUTEX(intelli_plug_mutex);
 
@@ -57,6 +57,9 @@ module_param(intelli_plug_active, uint, 0644);
 
 static unsigned int touch_boost_active = 1;
 module_param(touch_boost_active, uint, 0644);
+
+static unsigned int nr_run_profile_sel = 0;
+module_param(nr_run_profile_sel, uint, 0644);
 
 //default to something sane rather than zero
 static unsigned int sampling_time = DEF_SAMPLING_MS;
@@ -184,10 +187,7 @@ static unsigned int calculate_thread_stats(void)
 
 	for (nr_run = 1; nr_run < threshold_size; nr_run++) {
 		unsigned int nr_threshold;
-		if (!eco_mode_active)
-			nr_threshold = nr_run_thresholds_full[nr_run - 1];
-		else
-			nr_threshold = nr_run_thresholds_eco[nr_run - 1];
+		nr_threshold = current_profile[nr_run - 1];
 
 		if (nr_run_last <= nr_run)
 			nr_threshold += nr_run_hysteresis;
@@ -409,6 +409,7 @@ static void wakeup_boost(void)
 		cpufreq_update_policy(cpu);
 	}
 }
+
 
 #ifdef CONFIG_POWERSUSPEND
 static void __cpuinit intelli_plug_resume(struct power_suspend *handler)
