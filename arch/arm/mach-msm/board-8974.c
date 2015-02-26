@@ -84,27 +84,6 @@ static struct reserve_info msm8974_reserve_info __initdata = {
 #include <linux/persistent_ram.h>
 #include "board-8974-console.h"
 
-/* static struct memtype_reserve msm8974_reserve_table[] __initdata = {
-	[MEMTYPE_SMI] = {
-	},
-	[MEMTYPE_EBI0] = {
-		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
-	},
-	[MEMTYPE_EBI1] = {
-		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
-	},
-};
-
-static int msm8974_paddr_to_memtype(phys_addr_t paddr)
-{
-	return MEMTYPE_EBI1;
-}
-
-static struct reserve_info msm8974_reserve_info __initdata = {
-	.memtype_reserve_table = msm8974_reserve_table,
-	.paddr_to_memtype = msm8974_paddr_to_memtype,
-}; */
-
 #ifdef CONFIG_ANDROID_PERSISTENT_RAM
 #define MSM_PERSISTENT_RAM_SIZE (SZ_1M)
 #define MSM_RAM_CONSOLE_SIZE (128 * SZ_1K)
