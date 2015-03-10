@@ -29,15 +29,12 @@
 #include <linux/genhd.h>
 #include <linux/highmem.h>
 #include <linux/slab.h>
-#include <linux/crypto.h>
-#include <linux/cpu.h>
+#include <linux/lzo.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
 #include <linux/ratelimit.h>
 
 #include "zram_drv.h"
-
-#define ZRAM_COMPRESSOR_DEFAULT "lz4"
 
 /* Globals */
 static int zram_major;
@@ -345,7 +342,7 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 	zs_unmap_object(meta->mem_pool, handle);
 
 	/* Should NEVER happen. Return bio error if it does. */
-	if (unlikely(ret != 0)) {
+	if (unlikely(ret != LZO_E_OK)) {
 		pr_err("Decompression failed! err=%d, page=%u\n", ret, index);
 		atomic64_inc(&zram->stats.failed_reads);
 		return ret;
@@ -469,7 +466,7 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 		uncmem = NULL;
 	}
 
-	if (unlikely(ret != 0)) {
+	if (unlikely(ret != LZO_E_OK)) {
 		pr_err("Compression failed! err=%d\n", ret);
 		goto out;
 	}
@@ -922,38 +919,12 @@ static void destroy_device(struct zram *zram)
 static int __init zram_init(void)
 {
 	int ret, dev_id;
-	pr_info("Loading Crypto API features\n");
-	if (zram_comp_init()) {
-		pr_err("Compressor initialization failed\n");
-		ret = -ENOMEM;
-		goto out;
-	}
- 
-	if (zram_cpu_init()) {
-		pr_err("Per-cpu initialization failed\n");
-		ret = -ENOMEM;
-		goto free_comp;
-	}
-
-	/* Initialize Cryptographic API */
-	pr_info("Loading Crypto API features\n");
-	if (zram_comp_init()) {
-		pr_err("Compressor initialization failed\n");
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	if (zram_cpu_init()) {
-		pr_err("Per-cpu initialization failed\n");
-		ret = -ENOMEM;
-		goto free_comp;
-	}
 
 	if (num_devices > max_num_devices) {
 		pr_warn("Invalid value for num_devices: %u\n",
 				num_devices);
 		ret = -EINVAL;
-		goto free_cpu_comp;
+		goto out;
 	}
 
 	zram_major = register_blkdev(0, "zram");
@@ -986,10 +957,6 @@ free_devices:
 	kfree(zram_devices);
 unregister:
 	unregister_blkdev(zram_major, "zram");
-free_cpu_comp:
-	zram_comp_cpus_down();
-free_comp:
-	zram_comp_exit();
 out:
 	return ret;
 }
@@ -1013,8 +980,6 @@ static void __exit zram_exit(void)
 	unregister_blkdev(zram_major, "zram");
 
 	kfree(zram_devices);
-	zram_comp_cpus_down();
-	zram_comp_exit();
 	pr_debug("Cleanup done!\n");
 }
 
