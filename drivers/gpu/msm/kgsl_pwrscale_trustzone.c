@@ -27,10 +27,6 @@
 #include <linux/module.h>
 #endif
 
-#ifdef CONFIG_MSM_KGSL_SIMPLE_GOV
-#include <linux/module.h>
-#endif
-
 #define TZ_GOVERNOR_PERFORMANCE 0
 #define TZ_GOVERNOR_ONDEMAND    1
 #ifdef CONFIG_MSM_KGSL_SIMPLE_GOV
@@ -156,8 +152,7 @@ static void tz_wake(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 #else
 		priv->governor == TZ_GOVERNOR_ONDEMAND)
 #endif
-		if (device->pwrctrl.constraint.type == KGSL_CONSTRAINT_NONE)
-			kgsl_pwrctrl_pwrlevel_change(device,
+		kgsl_pwrctrl_pwrlevel_change(device,
 					device->pwrctrl.default_pwrlevel);
 }
 
