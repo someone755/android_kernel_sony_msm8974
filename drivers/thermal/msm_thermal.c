@@ -1349,18 +1349,7 @@ static int hotplug_init_cpu_offlined(void)
 					KBUILD_MODNAME);
 		return -EINVAL;
 	}
-
-	pr_warn("msm_thermal: Warning! Thermal guard disabled!");
-}
-
-static void enable_msm_thermal(void)
-{
-	enabled = 1;
-	/* make sure check_temp is running */
-	queue_delayed_work(check_temp_workq, &check_temp_work,
-			   msecs_to_jiffies(msm_thermal_info.poll_ms));
-
-	pr_info("msm_thermal: Thermal guard enabled.");
+	return 0;
 }
 
 static void hotplug_init(void)
@@ -1368,14 +1357,8 @@ static void hotplug_init(void)
 	uint32_t cpu = 0;
 	struct sensor_threshold *hi_thresh = NULL, *low_thresh = NULL;
 
-	ret = param_set_bool(val, kp);
-	if (!enabled)
-		disable_msm_thermal();
-	else if (enabled == 1)
-		enable_msm_thermal();
-	else
-		pr_info("%s: no action for enabled = %d\n",
-				KBUILD_MODNAME, enabled);
+	if (hotplug_task)
+		return;
 
 	if (!hotplug_enabled)
 		goto init_kthread;
