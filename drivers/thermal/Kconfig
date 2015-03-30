@@ -101,6 +101,16 @@ config THERMAL_MONITOR
 	  absence of a system wide thermal monitoring entity or until such an
 	  entity starts running in the userspace. Monitors TSENS temperature
 	  and limits the max frequency of the cores.
+
+config BRICKED_THERMAL
+	tristate "Bricked thermal monitor based on pre core-control msm_thermal"
+	depends on THERMAL_TSENS8960 || THERMAL_TSENS8974
+	depends on CPU_FREQ_MSM
+	default n
+	help
+	  This enables thermal monitoring capability in the kernel.
+	  Monitors TSENS temperature and limits the max frequency of the cores.
+	  This replaces the qcom msm_thermal when defined!
 endchoice
 
 config SPEAR_THERMAL
