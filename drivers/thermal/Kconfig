@@ -75,6 +75,7 @@ config THERMAL_PM8XXX
 
 choice
 	prompt "MSM Thermal Monitor Types"
+	default THERMAL_MONITOR
 
 config INTELLI_THERMAL
 	bool "Better thermal monitor for MSM"
