@@ -77,10 +77,10 @@ extern int msm_thermal_init(struct msm_thermal_data *pdata);
 extern int msm_thermal_device_init(void);
 #endif
 #else
-static inline int msm_thermal_init(struct msm_thermal_data *pdata)
+/*static inline int msm_thermal_init(struct msm_thermal_data *pdata)
 {
 	return -ENOSYS;
-}
+}*/
 #ifndef CONFIG_BRICKED_THERMAL
 static inline int msm_thermal_device_init(void)
 {
