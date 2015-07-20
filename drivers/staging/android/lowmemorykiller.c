@@ -235,7 +235,7 @@ static struct task_struct *pick_first_task(void);
 static struct task_struct *pick_last_task(void);
 #endif
 
-static DEFINE_MUTEX(scan_mutex);
+/*static DEFINE_MUTEX(scan_mutex);*/
 
 static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 {
