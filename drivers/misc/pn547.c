@@ -622,7 +622,6 @@ err_get_clock:
 #endif
 	kfree(pn547_dev);
 err_exit:
-err_pvdd_en:
 	gpio_free(platform_data->pvdd_en_gpio);
 #ifdef CONFIG_NFC_PN547_CLOCK_REQUEST
 	gpio_free(platform_data->clk_req_gpio);
