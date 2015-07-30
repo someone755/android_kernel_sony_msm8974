@@ -430,13 +430,11 @@ static void pp_ad_bypass_config(struct mdss_ad_info *ad,
 				struct mdss_mdp_ctl *ctl, u32 num, u32 *opmode);
 static int mdss_mdp_ad_setup(struct msm_fb_data_type *mfd);
 static void pp_ad_cfg_lut(char __iomem *addr, u32 *data);
-/*
 static int pp_ad_attenuate_bl(struct mdss_ad_info *ad, u32 bl, u32 *bl_out);
 static int pp_ad_linearize_bl(struct mdss_ad_info *ad, u32 bl, u32 *bl_out,
 		int inv);
 static int pp_ad_calc_bl(struct msm_fb_data_type *mfd, int bl_in, int *bl_out,
-		bool *bl_out_notify);*/
-static u32 pp_ad_attenuate_bl(u32 bl, struct mdss_ad_info *ad);
+		bool *bl_out_notify);
 static struct msm_fb_data_type *mdss_get_mfd_from_index(int index);
 static int pp_num_to_side(struct mdss_mdp_ctl *ctl, u32 num);
 static inline bool pp_sts_is_enabled(u32 sts, int side);
