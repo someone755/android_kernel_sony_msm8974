@@ -1,5 +1,5 @@
 /* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
- * Copyright (C) 2014 Sony Mobile Communications Inc.
+ * Copyright (c) 2014 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -86,6 +86,7 @@ struct disp_info_notify {
 	int value;
 	int is_suspend;
 	int ref_count;
+	bool init_done;
 };
 
 struct msm_sync_pt_data {
@@ -203,7 +204,8 @@ struct msm_fb_data_type {
 	u32 bl_min_lvl;
 	u32 unset_bl_level;
 	u32 bl_updated;
-	u32 bl_level_old;
+	u32 bl_level_scaled;
+	u32 bl_level_prev_scaled;
 	struct mutex bl_lock;
 
 	struct platform_device *pdev;

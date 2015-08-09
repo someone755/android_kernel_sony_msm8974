@@ -5,7 +5,7 @@
  *  SD support Copyright (C) 2004 Ian Molton, All Rights Reserved.
  *  Copyright (C) 2005-2008 Pierre Ossman, All Rights Reserved.
  *  MMCv4 support Copyright (C) 2006 Philip Langdale, All Rights Reserved.
- *  Copyright (C) 2013 Sony Mobile Communications AB.
+ *  Copyright (C) 2013 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -2915,7 +2915,8 @@ out:
 	return;
 }
 
-static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host)
+static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host,
+				enum mmc_load state)
 {
 	struct mmc_card *card = host->card;
 	u32 status;
@@ -2928,7 +2929,8 @@ static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host)
 	 */
 	if (!card || (mmc_card_mmc(card) &&
 			card->part_curr == EXT_CSD_PART_CONFIG_ACC_RPMB)
-			|| host->clk_scaling.invalid_state)
+			|| (state != MMC_LOAD_LOW &&
+				host->clk_scaling.invalid_state))
 		goto out;
 
 	if (mmc_send_status(card, &status)) {
@@ -2959,7 +2961,7 @@ static int mmc_clk_update_freq(struct mmc_host *host,
 	}
 
 	if (freq != host->clk_scaling.curr_freq) {
-		if (!mmc_is_vaild_state_for_clk_scaling(host)) {
+		if (!mmc_is_vaild_state_for_clk_scaling(host, state)) {
 			err = -EAGAIN;
 			goto error;
 		}
@@ -3878,7 +3880,7 @@ static int __init mmc_init(void)
 {
 	int ret;
 
-	workqueue = alloc_ordered_workqueue("kmmcd", 0);
+	workqueue = alloc_ordered_workqueue("kmmcd", WQ_FREEZABLE);
 	if (!workqueue)
 		return -ENOMEM;
 
