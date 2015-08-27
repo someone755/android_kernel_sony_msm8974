@@ -166,18 +166,8 @@ static int boost_mig_sync_thread(void *data)
 			continue;
 		}
 
-		if (sync_threshold && (dest_policy.cur >= sync_threshold))
-			continue;
-
 		cancel_delayed_work_sync(&s->boost_rem);
-		if (sync_threshold) {
-			if (src_policy.cur >= sync_threshold)
-				s->boost_min = sync_threshold;
-			else
-				s->boost_min = src_policy.cur;
-		} else {
-			s->boost_min = src_policy.cur;
-		}
+		s->boost_min = src_policy.cur;
 		/* Force policy re-evaluation to trigger adjust notifier. */
 		get_online_cpus();
 		if (cpu_online(dest_cpu)) {
