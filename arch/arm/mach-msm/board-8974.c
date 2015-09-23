@@ -54,6 +54,8 @@
 #include <asm/setup.h>
 #endif
 
+#define MSM_PERSISTENT_RAM_SIZE (SZ_1M)
+
 static struct memtype_reserve msm8974_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
 	},
