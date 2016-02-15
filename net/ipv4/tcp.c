@@ -748,7 +748,9 @@ static unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 			   old_size_goal + mss_now > xmit_size_goal)) {
 			xmit_size_goal = old_size_goal;
 		} else {
-			tp->xmit_size_goal_segs = xmit_size_goal / mss_now;
+			tp->xmit_size_goal_segs =
+				min_t(u16, xmit_size_goal / mss_now,
+				      sk->sk_gso_max_segs);
 			xmit_size_goal = tp->xmit_size_goal_segs * mss_now;
 		}
 	}
@@ -3396,7 +3398,7 @@ int tcp_nuke_addr(struct net *net, struct sockaddr *addr)
 		return -EAFNOSUPPORT;
 	}
 
-	for (bucket = 0; bucket < tcp_hashinfo.ehash_mask; bucket++) {
+	for (bucket = 0; bucket <= tcp_hashinfo.ehash_mask; bucket++) {
 		struct hlist_nulls_node *node;
 		struct sock *sk;
 		spinlock_t *lock = inet_ehash_lockp(&tcp_hashinfo, bucket);
@@ -3442,14 +3444,15 @@ restart:
 			sock_hold(sk);
 			spin_unlock_bh(lock);
 
-			local_bh_disable();
-			bh_lock_sock(sk);
+			lock_sock(sk);
 			sk->sk_err = ETIMEDOUT;
 			sk->sk_error_report(sk);
 
+			local_bh_disable();
 			tcp_done(sk);
-			bh_unlock_sock(sk);
 			local_bh_enable();
+
+			release_sock(sk);
 			sock_put(sk);
 
 			goto restart;
